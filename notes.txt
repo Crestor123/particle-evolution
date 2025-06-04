@@ -1,0 +1,21 @@
+Main Goals:
+    Small scale life evolution sim using particles
+    Particles exert forces on other particles
+    Particles can form bonds and create molecules
+    Particles can affect the state of other particles (metabolism)
+
+    Simplify common cell structures as single particles
+
+Mechanics:
+    Particles are spawned based on input parameters
+    Their interactions can be customized
+    Particles can bond based on charge
+    Energy is stored as either vibration or rotation
+    Colliding particles either bond, or transfer energy
+
+TODO:
+    UI with controls for setting particle spawn numbers
+    Particle interaction function
+        Process each type of particle with relation to each other type 
+        Bounce off of walls
+    Ability to select a particle or molecule to see info
