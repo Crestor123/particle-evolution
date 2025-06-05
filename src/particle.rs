@@ -1,7 +1,8 @@
 use bevy::prelude::*;
 use rand::distr::{Distribution, Uniform};
+use std::cmp;
 //use bevy::sprite::{Wireframe2dConfig, Wireframe2dPlugin};
-use super::{Extents, Group, Particle, Velocity, Friction};
+use super::{Extents, Group, Particle, Velocity, Friction, Charge, Bond};
 
 const PARTICLE_RADIUS: f32 = 3.0;
 const COLOR_RED: Color = Color::hsl(0.0, 1.0, 0.5);
@@ -22,28 +23,33 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    q_group: Query<(&Group, &Charge)>,
     extents: ResMut<Extents>
 ) {
     commands.spawn(Camera2d);
 
     //Creating groups to hold particles
     let red_group = commands.spawn((
-        Group{name: String::from("red"), charge: -1, radius: 50.0},
+        Group{name: String::from("red"), radius: 50.0},
+        Charge(-1),
         Transform::from_xyz(0.0, 0.0, 0.0)
     )).id();
 
     let blue_group = commands.spawn((
-        Group{name: String::from("blue"), charge: 1, radius: 50.0},
+        Group{name: String::from("blue"), radius: 50.0},
+        Charge(1),
         Transform::from_xyz(0.0, 0.0, 0.0)
     )).id();
 
     let green_group = commands.spawn((
-        Group{name: String::from("green"), charge: 2, radius: 50.0},
+        Group{name: String::from("green"), radius: 50.0},
+        Charge(2),
         Transform::from_xyz(0.0, 0.0, 0.0)
     )).id();
 
     let yellow_group = commands.spawn((
-        Group{name: String::from("yellow"), charge: -5, radius: 50.0},
+        Group{name: String::from("yellow"), radius: 50.0},
+        Charge(-5),
         Transform::from_xyz(0.0, 0.0, 0.0)
     )).id();
 
@@ -57,7 +63,7 @@ fn setup(
         .unwrap();
 
     //Need to make this code generic
-    for _i in 0..100 {
+    for _i in 0..50 {
         let posx : f32 = x_range.sample(&mut rng);
         let posy : f32 = y_range.sample(&mut rng);
 
@@ -66,12 +72,13 @@ fn setup(
             &mut meshes, 
             &mut materials,
             red_group,
+            -1,
             COLOR_RED,
             posx,
             posy
         );
     }
-    for _i in 0..100 {
+    for _i in 0..50 {
         let posx : f32 = x_range.sample(&mut rng);
         let posy : f32 = y_range.sample(&mut rng);
 
@@ -80,12 +87,13 @@ fn setup(
             &mut meshes,
             &mut materials,
             blue_group,
+            1,
             COLOR_BLUE,
             posx,
             posy
         );
     }
-    for _i in 0..100 {
+    for _i in 0..50 {
         let posx : f32 = x_range.sample(&mut rng);
         let posy : f32 = y_range.sample(&mut rng);
 
@@ -94,12 +102,13 @@ fn setup(
             &mut meshes,
             &mut materials,
             green_group,
+            2,
             COLOR_GREEN,
             posx,
             posy
         );
     }
-    for _i in 0..100 {
+    for _i in 0..50 {
         let posx : f32 = x_range.sample(&mut rng);
         let posy : f32 = y_range.sample(&mut rng);
 
@@ -108,6 +117,7 @@ fn setup(
             &mut meshes,
             &mut materials,
             yellow_group,
+            -5,
             COLOR_YELLOW,
             posx,
             posy
@@ -121,6 +131,7 @@ fn create_particle(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<ColorMaterial>>,
     group: Entity,
+    charge: i8,
     particle_color: Color,
     x_position: f32,
     y_position: f32
@@ -131,36 +142,59 @@ fn create_particle(
         Mesh2d(meshes.add(Circle::new(PARTICLE_RADIUS),)),
         MeshMaterial2d(materials.add(particle_color)),
         Transform::from_xyz(x_position, y_position, 0.0),
-        Particle {group: group, vibration: 0, rotation: 0},
+        Particle {
+            group: group,
+            vibration: 0, 
+            positive: charge.is_positive(),
+            rotation: 0, 
+            bonds: Vec::new()
+        },
+        Charge(charge),
         Velocity(Vec2::ZERO),
     )).id();
     
     particle
 }
 
+fn create_bond(
+    commands: &mut Commands,
+    particle_a: Entity,
+    particle_b: Entity,
+    charge: i8,
+) -> Entity {
+    let bond = commands.spawn((
+        Bond {
+            particle_a: particle_a, 
+            particle_b: particle_b
+        },
+        Charge(charge),
+    )).id();
+
+    bond
+}
+
 //Processes all pairs of particles
 //Calculates the force of one particle on the other
 fn interact(
-    mut q_particle: Query<(&Particle, &Transform, &mut Velocity)>,
-    q_group: Query<&Group>,
-    friction: Res<Friction>
+    mut q_particle: Query<(Entity, &Particle, &mut Charge, &mut Transform, &mut Velocity)>,
+    q_group: Query<(&Group, &Charge), Without<Particle>>,
+    friction: Res<Friction>,
+    mut commands: Commands,
 ) {
     let mut iter = q_particle.iter_combinations_mut();
-    while let Some([(particle_a, pos_a, mut vel_a), 
-        (particle_b, pos_b, mut vel_b)])
+    while let Some([(id_a, particle_a, mut charge_a, mut pos_a, mut vel_a), 
+        (id_b, particle_b, mut charge_b, pos_b, mut vel_b)])
         = iter.fetch_next() {
 
-        let group_a = q_group.get(particle_a.group).unwrap();
-        let group_b = q_group.get(particle_b.group).unwrap();
+        let (group_a, group_charge_a) = q_group.get(particle_a.group).unwrap();
+        let (group_b, group_charge_b) = q_group.get(particle_b.group).unwrap();
 
         //Calculate force
-        let charge_a = group_a.charge;
-        let charge_b = group_b.charge;
         let radius_a = group_a.radius;
         let radius_b = group_b.radius;
 
         //Force is |charge_a| + |charge_b|, mutliplied by the signs of each charge
-        let force = -((charge_a.abs() + charge_a.abs()) * (charge_a.signum() * charge_b.signum()));
+        let force = -((charge_a.0.abs() + charge_a.0.abs()) * (charge_a.0.signum() * charge_b.0.signum()));
 
         //Formula is based on the distance
         //Force increases as distance decreases
@@ -169,14 +203,32 @@ fn interact(
         let dir_x = pos_a.translation.x - pos_b.translation.x;
         let dir_y = pos_a.translation.y - pos_b.translation.y;
 
+        //Collision
+        if distance_squared <= (PARTICLE_RADIUS * 2.0).powf(2.0) {
+            //Bounce
+            vel_a.0 *= -1.0;
+            vel_b.0 *= -1.0;
+
+            //Check for bonding
+            if (charge_a.0 ^ charge_b.0) < 0 {
+                //If the particles have opposite charges, they can bond
+                //Find which particle has the lowest charge
+                let charge_bond = cmp::min(charge_a.0.abs(), charge_b.0.abs());
+                if charge_a.0.is_positive() { charge_a.0 -= charge_bond } else { charge_a.0 += charge_bond }
+                if charge_b.0.is_positive() { charge_b.0 -= charge_bond } else { charge_b.0 += charge_bond }
+
+                create_bond(&mut commands, id_a, id_b, charge_bond);
+            }  
+        }
+
         //Force of A on B
-        if distance_squared > 0.0 && distance_squared < radius_a.powf(2.0) {
+        if distance_squared > (PARTICLE_RADIUS * 2.0).powf(2.0) && distance_squared < radius_a.powf(2.0) {
             vel_b.0.x += (dir_x * falloff * f32::from(force) * 2.0) * (1.0 / friction.0);
             vel_b.0.y += (dir_y * falloff * f32::from(force) * 2.0) * (1.0 / friction.0);
         }
 
         //Force of B on A
-        if distance_squared > 0.0 && distance_squared < radius_b.powf(2.0) {
+        if distance_squared > (PARTICLE_RADIUS * 2.0).powf(2.0) && distance_squared < radius_b.powf(2.0) {
             vel_a.0.x += (-dir_x * falloff * f32::from(force) * 2.0) * (1.0 / friction.0);
             vel_a.0.y += (-dir_y * falloff * f32::from(force) * 2.0) * (1.0 / friction.0);
         }

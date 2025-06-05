@@ -1,17 +1,27 @@
 use bevy::prelude::*;
 
 #[derive(Component)]
+pub struct Charge(pub i8);
+
+#[derive(Component)]
 pub struct Particle {
     pub rotation: i8,
     pub vibration: i8,
-    pub group: Entity
+    pub positive: bool,
+    pub group: Entity,
+    pub bonds: Vec<Bond>
 }
 
 #[derive(Component)]
-pub struct Group{
+pub struct Group {
     pub name: String,
-    pub charge: i8,
     pub radius: f32,
+}
+
+#[derive(Component)]
+pub struct Bond {
+    pub particle_a: Entity,
+    pub particle_b: Entity,
 }
 
 #[derive(Component)]
