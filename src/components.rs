@@ -9,7 +9,7 @@ pub struct Particle {
     pub vibration: i8,
     pub positive: bool,
     pub group: Entity,
-    pub bonds: Vec<Bond>
+    pub bonds: Vec<Entity>
 }
 
 #[derive(Component)]
