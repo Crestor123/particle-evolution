@@ -32,25 +32,25 @@ fn setup(
 
     //Creating groups to hold particles
     let red_group = commands.spawn((
-        Group{name: String::from("red"), radius: 50.0},
+        Group{name: String::from("red"), radius: 100.0},
         Charge(-1),
         Transform::from_xyz(0.0, 0.0, 0.0)
     )).id();
 
     let blue_group = commands.spawn((
-        Group{name: String::from("blue"), radius: 50.0},
+        Group{name: String::from("blue"), radius: 100.0},
         Charge(1),
         Transform::from_xyz(0.0, 0.0, 0.0)
     )).id();
 
     let green_group = commands.spawn((
-        Group{name: String::from("green"), radius: 50.0},
+        Group{name: String::from("green"), radius: 100.0},
         Charge(2),
         Transform::from_xyz(0.0, 0.0, 0.0)
     )).id();
 
     let yellow_group = commands.spawn((
-        Group{name: String::from("yellow"), radius: 50.0},
+        Group{name: String::from("yellow"), radius: 100.0},
         Charge(-6),
         Transform::from_xyz(0.0, 0.0, 0.0)
     )).id();
@@ -65,7 +65,7 @@ fn setup(
         .unwrap();
 
     //Need to make this code generic
-    for _i in 0..100 {
+    for _i in 0..50 {
         let posx : f32 = x_range.sample(&mut rng);
         let posy : f32 = y_range.sample(&mut rng);
 
@@ -80,7 +80,7 @@ fn setup(
             posy
         );
     }
-    for _i in 0..100 {
+    for _i in 0..50 {
         let posx : f32 = x_range.sample(&mut rng);
         let posy : f32 = y_range.sample(&mut rng);
 
@@ -95,7 +95,7 @@ fn setup(
             posy
         );
     }
-    for _i in 0..100 {
+    for _i in 0..50 {
         let posx : f32 = x_range.sample(&mut rng);
         let posy : f32 = y_range.sample(&mut rng);
 
@@ -110,7 +110,7 @@ fn setup(
             posy
         );
     }
-    for _i in 0..100 {
+    for _i in 0..50 {
         let posx : f32 = x_range.sample(&mut rng);
         let posy : f32 = y_range.sample(&mut rng);
 
@@ -186,6 +186,7 @@ fn create_bond(
 fn interact(
     mut q_particle: Query<(Entity, &mut Particle, &mut Charge, &mut Transform, &mut Velocity)>,
     q_group: Query<(&Group, &Charge), Without<Particle>>,
+    q_bond: Query<(&Bond, &Charge), (Without<Particle>, Without<Group>)>,
     friction: Res<Friction>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -221,11 +222,53 @@ fn interact(
                 pos_a.translation.y -= dir_y * PARTICLE_RADIUS;
                 pos_b.translation.x += dir_x * PARTICLE_RADIUS;
                 pos_b.translation.y += dir_y * PARTICLE_RADIUS;
+
+                vel_a.0.x -= 10.0 * dir_x;
+                vel_a.0.y -= 10.0 * dir_y;
+                vel_b.0.x += 10.0 * dir_x;
+                vel_b.0.y += 10.0 * dir_y;
             }
 
             //Bounce
             vel_a.0 *= -1.0;
             vel_b.0 *= -1.0;
+
+            //Check for bond breaking
+            for bond in &particle_a.bonds {
+                let b = q_bond.get(*bond);
+                match b {
+                    Ok((bond_id, bond_charge)) => {
+                        if charge_b.0 > bond_charge.0 && particle_a.mass > 1 {
+                            if particle_a.positive {
+                                charge_a.0 += bond_charge.0;
+                            } else {
+                                charge_a.0 -= bond_charge.0;
+                            }
+                            commands.entity(*bond).despawn_recursive();
+                        }
+                    }
+                    Err(_e) => println!("Bond did not exist")
+                }
+
+            }
+            for bond in &particle_b.bonds {
+                let b = q_bond.get(*bond);
+                match b {
+                    Ok((bond_id, bond_charge)) => {
+                        if charge_a.0 > bond_charge.0 && particle_b.mass > 1 {
+                            if charge_b.0 > bond_charge.0 && particle_b.mass > 1 {
+                                if particle_a.positive {
+                                    charge_a.0 += bond_charge.0;
+                                } else {
+                                    charge_a.0 -= bond_charge.0;
+                                }
+                                commands.entity(*bond).despawn_recursive();
+                            }
+                        }
+                    }
+                    Err(_e) => println!("Bond did not exist")
+                }
+            }
 
             //Check for bonding
             if !(charge_a.0 == 0 || charge_b.0 == 0) && (charge_a.0 ^ charge_b.0) < 0 {
@@ -242,6 +285,8 @@ fn interact(
                 particle_a.bonds.push(bond);
                 particle_b.bonds.push(bond);
             }  
+
+
         }
 
         if particle_a.bonds.contains(&id_b) {
@@ -299,6 +344,7 @@ fn update_bonds (
 
         //Update the position of the bond
         bond_pos.translation = pos_a.translation.midpoint(pos_b.translation);
+        bond_pos.translation.z = -1.0;
         bond_pos.scale = Vec3::new(distance, 1.0, 1.0);
         bond_pos.rotation = Quat::from_rotation_z(dir.to_angle());
     }
@@ -337,6 +383,7 @@ fn update_particles (
         //Will definitely change this to be a variable later
         vel.0 = vel.0.clamp_length_max(100.0);
         let velocity = vel.0;
+        //Adding friction
         vel.0 -= velocity * (1.0 - friction.0) * dt;
 
         pos.translation.x += (vel.0.x) * dt;
