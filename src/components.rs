@@ -5,6 +5,7 @@ pub struct Charge(pub i8);
 
 #[derive(Component)]
 pub struct Particle {
+    pub mass: i8,
     pub rotation: i8,
     pub vibration: i8,
     pub positive: bool,

@@ -13,7 +13,7 @@ use crate::particle::ParticlePlugin;
 const X_EXTENTS: f32 = 1280.0;
 const Y_EXTENTS: f32 = 720.0;
 
-const FRICTION: f32 = 0.6;
+const FRICTION: f32 = 0.01;
 
 fn main() {
     let mut app = App::new();

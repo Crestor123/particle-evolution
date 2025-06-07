@@ -51,7 +51,7 @@ fn setup(
 
     let yellow_group = commands.spawn((
         Group{name: String::from("yellow"), radius: 50.0},
-        Charge(-5),
+        Charge(-6),
         Transform::from_xyz(0.0, 0.0, 0.0)
     )).id();
 
@@ -65,7 +65,7 @@ fn setup(
         .unwrap();
 
     //Need to make this code generic
-    for _i in 0..50 {
+    for _i in 0..100 {
         let posx : f32 = x_range.sample(&mut rng);
         let posy : f32 = y_range.sample(&mut rng);
 
@@ -80,7 +80,7 @@ fn setup(
             posy
         );
     }
-    for _i in 0..50 {
+    for _i in 0..100 {
         let posx : f32 = x_range.sample(&mut rng);
         let posy : f32 = y_range.sample(&mut rng);
 
@@ -95,7 +95,7 @@ fn setup(
             posy
         );
     }
-    for _i in 0..50 {
+    for _i in 0..100 {
         let posx : f32 = x_range.sample(&mut rng);
         let posy : f32 = y_range.sample(&mut rng);
 
@@ -110,7 +110,7 @@ fn setup(
             posy
         );
     }
-    for _i in 0..50 {
+    for _i in 0..100 {
         let posx : f32 = x_range.sample(&mut rng);
         let posy : f32 = y_range.sample(&mut rng);
 
@@ -145,6 +145,7 @@ fn create_particle(
         MeshMaterial2d(materials.add(particle_color)),
         Transform::from_xyz(x_position, y_position, 0.0),
         Particle {
+            mass: charge.abs(),
             group: group,
             vibration: 0, 
             positive: charge.is_positive(),
@@ -174,7 +175,7 @@ fn create_bond(
         Charge(charge),
         Mesh2d(meshes.add(Rectangle::new(1.0, 1.0))),
         MeshMaterial2d(materials.add(Color::WHITE)),
-        Transform::from_xyz(0.0, 0.0, -1.0),
+        Transform::from_xyz(0.0, 0.0, -2.0),
     )).id();
 
     bond
@@ -208,7 +209,7 @@ fn interact(
         //Formula is based on the distance
         //Force increases as distance decreases
         let distance_squared = Vec3::distance_squared(pos_a.translation, pos_b.translation);
-        let falloff = 1.0 / f32::sqrt(distance_squared);
+        let falloff = 1.0 / (f32::sqrt(distance_squared) * 2.0);
         let dir_x = pos_a.translation.x - pos_b.translation.x;
         let dir_y = pos_a.translation.y - pos_b.translation.y;
 
@@ -227,12 +228,15 @@ fn interact(
             vel_b.0 *= -1.0;
 
             //Check for bonding
-            if charge_a.0 != 0 && charge_b.0 != 0 && (charge_a.0 ^ charge_b.0) < 0 {
+            if !(charge_a.0 == 0 || charge_b.0 == 0) && (charge_a.0 ^ charge_b.0) < 0 {
                 //If the particles have opposite charges, they can bond
                 //Find which particle has the lowest charge
+                println!("{}, {}", charge_a.0.abs(), charge_b.0.abs());
                 let charge_bond = cmp::min(charge_a.0.abs(), charge_b.0.abs());
+                println!("{}", charge_bond);
                 if charge_a.0.is_positive() { charge_a.0 -= charge_bond } else { charge_a.0 += charge_bond }
                 if charge_b.0.is_positive() { charge_b.0 -= charge_bond } else { charge_b.0 += charge_bond }
+                println!("{}, {}\n", charge_a.0, charge_b.0);
 
                 let bond = create_bond(&mut commands, id_a, id_b, charge_bond, &mut meshes, &mut materials);
                 particle_a.bonds.push(bond);
@@ -240,28 +244,32 @@ fn interact(
             }  
         }
 
+        if particle_a.bonds.contains(&id_b) {
+            //No forces should be applied if the two particles are bonded
+            return;
+        }
+
         //Force of A on B
         if distance_squared > (PARTICLE_RADIUS * 2.0).powf(2.0) && distance_squared < radius_a.powf(2.0) {
-            vel_b.0.x += (dir_x * falloff * f32::from(force) * 2.0) * friction.0;
-            vel_b.0.y += (dir_y * falloff * f32::from(force) * 2.0) * friction.0;
+            vel_b.0.x += (dir_x * falloff * f32::from(force) * f32::from(particle_a.mass));
+            vel_b.0.y += (dir_y * falloff * f32::from(force) * f32::from(particle_a.mass));
         }
 
         //Force of B on A
         if distance_squared > (PARTICLE_RADIUS * 2.0).powf(2.0) && distance_squared < radius_b.powf(2.0) {
-            vel_a.0.x += (-dir_x * falloff * f32::from(force) * 2.0) * friction.0;
-            vel_a.0.y += (-dir_y * falloff * f32::from(force) * 2.0) * friction.0;
+            vel_a.0.x += (-dir_x * falloff * f32::from(force) * f32::from(particle_a.mass));
+            vel_a.0.y += (-dir_y * falloff * f32::from(force) * f32::from(particle_a.mass));
         }
     }
 }
 
 fn update_bonds (
     mut q_bond: Query<(&Bond, &mut Transform, &Charge, &mut Mesh2d)>,
-    mut q_particle: Query<(&Particle, &Transform, &mut Velocity), Without<Bond>>,
+    mut q_particle: Query<(&Particle, &mut Transform, &mut Velocity), Without<Bond>>,
     friction: Res<Friction>,
-    mut meshes: ResMut<Assets<Mesh>>
 ) {
     for (bond, mut bond_pos, bond_charge, mut bond_mesh) in q_bond.iter_mut() {
-        let [(p_a, pos_a, mut vel_a), (p_b, pos_b, mut vel_b)] = q_particle.get_many_mut([bond.particle_a, bond.particle_b]).unwrap();
+        let [(p_a, mut pos_a, mut vel_a), (p_b, mut pos_b, mut vel_b)] = q_particle.get_many_mut([bond.particle_a, bond.particle_b]).unwrap();
 
         //Apply forces to each particle based on the bond's charge
         let dir = (pos_a.translation.xy() - pos_b.translation.xy()).normalize();
@@ -270,16 +278,29 @@ fn update_bonds (
         let distance = Vec3::distance(pos_a.translation, pos_b.translation);
         
         //Spring force
-        let force = -(f32::from(bond_charge.0) * (distance - BOND_LENGTH));
-        vel_a.0.x += force * dir.x - ((1.0 - friction.0) * force);
-        vel_b.0.x -= force * dir.x - ((1.0 - friction.0) * force);
-        vel_a.0.y += force * dir.y - ((1.0 - friction.0) * force);
-        vel_b.0.y -= force * dir.y - ((1.0 - friction.0) * force);
+        let force = f32::from(bond_charge.0 + 1).powf(1.6) * (distance - BOND_LENGTH);
+
+        //vel_a.0.x -= (force * f32::from(p_b.mass).powf(2.0)) * dir.x - ((1.0 - friction.0 * 2.0) * force);
+        //vel_b.0.x += (force * f32::from(p_a.mass).powf(2.0)) * dir.x - ((1.0 - friction.0 * 2.0) * force);
+        //vel_a.0.y -= (force * f32::from(p_b.mass).powf(2.0)) * dir.y - ((1.0 - friction.0 * 2.0) * force);
+        //vel_b.0.y += (force * f32::from(p_a.mass).powf(2.0)) * dir.y - ((1.0 - friction.0 * 2.0) * force);
+
+        //vel_a.0.x -= (force * f32::from(p_b.mass).powf(2.0)) * dir.x * friction.0;
+        //vel_b.0.x += (force * f32::from(p_a.mass).powf(2.0)) * dir.x * friction.0;
+        //vel_a.0.y -= (force * f32::from(p_b.mass).powf(2.0)) * dir.y * friction.0;
+        //vel_b.0.y += (force * f32::from(p_a.mass).powf(2.0)) * dir.y * friction.0;
+
+        if p_a.mass > p_b.mass {
+            pos_b.translation = pos_a.translation + (Vec3::new(dir.x, dir.y, 0.0) * BOND_LENGTH);
+        }
+        else { 
+            pos_a.translation = pos_b.translation + (Vec3::new(dir.x, dir.y, 0.0) * BOND_LENGTH);
+        }
 
         //Update the position of the bond
         bond_pos.translation = pos_a.translation.midpoint(pos_b.translation);
-        bond_pos.scale = Vec3::new(1.0, distance, 1.0);
-        bond_pos.rotation = Quat::from_rotation_z(dir.to_angle() + PI / 2.0);
+        bond_pos.scale = Vec3::new(distance, 1.0, 1.0);
+        bond_pos.rotation = Quat::from_rotation_z(dir.to_angle());
     }
 }
 
@@ -292,7 +313,7 @@ fn update_particles (
     let dt = time.delta_secs();
     //Move particles based on their velocity
     //Apply friction
-    for (_p, mut pos, mut vel) in q_particles.iter_mut() {
+    for (p, mut pos, mut vel) in q_particles.iter_mut() {
         //Check for walls, bounce off
         //Might change to give some force away from wall
         if pos.translation.x < -(extents.0.x / 2.0) {
@@ -315,8 +336,10 @@ fn update_particles (
         //Prevents 'particle acceleration'
         //Will definitely change this to be a variable later
         vel.0 = vel.0.clamp_length_max(100.0);
+        let velocity = vel.0;
+        vel.0 -= velocity * (1.0 - friction.0) * dt;
 
-        pos.translation.x += (vel.0.x * friction.0) * dt;
-        pos.translation.y += (vel.0.y * friction.0) * dt;
+        pos.translation.x += (vel.0.x) * dt;
+        pos.translation.y += (vel.0.y) * dt;
     }
 }
